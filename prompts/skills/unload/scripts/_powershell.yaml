@@ -1,0 +1,16 @@
+# PowerShell command catalog for the UNLOAD skill (Step 5).
+#
+# Local to this skill — the unload folder reads only this file at
+# runtime so the skill stays self-contained and is not dependent on
+# any catalog outside its own folder.
+#
+# Each entry is rendered as: "<cmdlet> <args_template>" with {baseline}
+# substituted at call time, then executed via `pwsh -Command "..."`.
+
+powershell_commands:
+
+  - id: unload_baseline_data
+    cmdlet: "unload-BaselineData"
+    args_template: "{baseline}"
+    step: "5"
+    purpose: "Unload baseline data from the database"

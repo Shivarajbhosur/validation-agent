@@ -1,0 +1,28 @@
+# PowerShell command catalog for the COPY skill (Step 1).
+#
+# Local to this skill — the copy folder reads only this file at runtime
+# so the skill stays self-contained and is not dependent on any catalog
+# outside its own folder.
+#
+# Each entry is rendered as: "<cmdlet> <args_template>" with {baseline}
+# substituted at call time, then executed via `pwsh -Command "..."`.
+
+powershell_commands:
+
+  - id: new_sysout
+    cmdlet: "New-Sysout"
+    args_template: "{baseline}"
+    step: "1b"
+    purpose: "Create SYSOUT output file"
+
+  - id: new_env
+    cmdlet: "New-Env"
+    args_template: "{baseline}"
+    step: "1c"
+    purpose: "Create .env file"
+
+  - id: copy_input
+    cmdlet: "Copy-Input"
+    args_template: "{baseline}"
+    step: "1d"
+    purpose: "Copy input files to working folder"

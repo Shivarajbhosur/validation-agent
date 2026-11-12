@@ -1,0 +1,17 @@
+# CI RUNTIME SUBSET for the regression suite.
+#
+# The regression tests import only config, models.session and chromadb — not the
+# full application stack. Installing this slim subset (instead of the heavy
+# requirements.txt, which pulls sentence-transformers + PyTorch) keeps CI fast
+# and avoids disk-space pressure on hosted agents.
+#
+# This file is CI-only. It does NOT change the application's own dependencies
+# (requirements.txt) and therefore has no effect on the Validation Agent's
+# runtime functionality or performance.
+#
+# Install together with requirements-dev.txt:
+#   pip install -r requirements-ci.txt -r requirements-dev.txt
+
+python-dotenv>=1.0.0
+loguru>=0.7.0
+chromadb>=0.4.0

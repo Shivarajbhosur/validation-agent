@@ -1,0 +1,16 @@
+# PowerShell command catalog for the LOAD skill (Step 2).
+#
+# Local to this skill — the load folder reads only this file at runtime
+# so the skill stays self-contained and is not dependent on any catalog
+# outside its own folder.
+#
+# Each entry is rendered as: "<cmdlet> <args_template>" with {baseline}
+# substituted at call time, then executed via `pwsh -Command "..."`.
+
+powershell_commands:
+
+  - id: load_baseline_data
+    cmdlet: "load-BaselineData"
+    args_template: "{baseline}"
+    step: "2"
+    purpose: "Load baseline data into the database"

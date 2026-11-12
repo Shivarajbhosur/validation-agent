@@ -1,0 +1,74 @@
+# Azure Pipeline — Validation Agent regression suite.
+#
+# CI trigger (below) runs automatically on commits pushed to these branches.
+# PR trigger for Azure Repos is NOT configured here: Azure DevOps ignores the
+# YAML `pr:` key for Azure Repos Git. To run automatically on pull requests
+# (and block merge on failure), add a Build Validation branch policy on `main`
+# that points at this pipeline. See tests/regression/README.md.
+
+
+#What the gate actually verifies on every run
+#For all discovered datasets (currently REG-001…004) it asserts:
+
+#✅ Correct agent sequence executed
+#✅ Correct exception category detected
+#✅ Correct root cause identified
+#✅ Correct KB article retrieved (RAG)
+#✅ Expected report generated
+#✅ Response time under threshold
+
+trigger:
+  branches:
+    include:
+      - main
+      - Testing
+      - feature/*
+  paths:
+    exclude:
+      - Docs/*
+      - README.md
+
+# Explicitly disabled: PR validation is driven by a branch policy, not here.
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  PYTHON_VERSION: "3.13"
+  REPORT_DIR: "tests/regression/report"
+
+steps:
+  - task: UsePythonVersion@0
+    displayName: "Use Python $(PYTHON_VERSION)"
+    inputs:
+      versionSpec: "$(PYTHON_VERSION)"
+
+  - script: |
+      python -m pip install --upgrade pip
+      python -m pip install -r requirements-ci.txt -r requirements-dev.txt
+    displayName: "Install dependencies (slim CI subset)"
+
+  - script: |
+      python -m pytest tests/regression \
+        -m regression \
+        --junitxml=$(REPORT_DIR)/junit.xml \
+        --html=$(REPORT_DIR)/pytest_report.html --self-contained-html \
+        -v
+    displayName: "Run regression suite"
+
+  - task: PublishTestResults@2
+    displayName: "Publish test results"
+    condition: always()
+    inputs:
+      testResultsFormat: "JUnit"
+      testResultsFiles: "$(REPORT_DIR)/junit.xml"
+      testRunTitle: "Validation Agent Regression"
+      failTaskOnFailedTests: true
+
+  - task: PublishPipelineArtifact@1
+    displayName: "Publish HTML regression report"
+    condition: always()
+    inputs:
+      targetPath: "$(REPORT_DIR)"
+      artifact: "regression-report"

@@ -1,0 +1,12 @@
+# VALIDATION AGENT — DEV / TEST REQUIREMENTS
+# Install alongside requirements.txt for running the regression suite:
+#   python -m pip install -r requirements.txt -r requirements-dev.txt
+#
+# These are TEST-ONLY dependencies. They do not affect the runtime
+# application or its performance.
+
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-mock>=3.12.0
+pytest-html>=4.1.0
+respx>=0.20.0

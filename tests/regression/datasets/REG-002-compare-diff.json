@@ -1,0 +1,45 @@
+{
+  "case_id": "REG-002-compare-diff",
+  "description": "Program runs but output comparison finds a rounding difference; analysis classifies COMPARE_DIFF and the rounding KB article is retrieved.",
+  "input": {
+    "baseline_name": "P03085-J3021493",
+    "program_name": "J3021493",
+    "error_message": "Compare mismatch on column NET_AMOUNT: expected 1024.45, actual 1024.44"
+  },
+  "step_outcomes": {
+    "compare_outputs": "failed"
+  },
+  "llm_responses": {
+    "analyze": {
+      "exception_category": "compare_diff",
+      "root_cause": "Rounding difference on decimal output: C# banker's rounding versus COBOL half-up rounding on column NET_AMOUNT.",
+      "confidence": 0.88
+    }
+  },
+  "kb_articles": [
+    {
+      "id": "KB-640",
+      "title": "Rounding difference on decimal amount columns: banker's rounding vs COBOL half-up",
+      "content": "C# decimal rounding uses banker's rounding by default while COBOL uses half-up. This produces a one-cent compare difference on amount columns such as NET_AMOUNT. Apply MidpointRounding.AwayFromZero.",
+      "metadata": { "program": "J3021493", "category": "compare_diff" }
+    },
+    {
+      "id": "KB-910",
+      "title": "NullReference guard clause for absent optional records",
+      "content": "Add a null guard before field access when an optional COBOL record may be absent in the generated C#.",
+      "metadata": { "category": "run_failed" }
+    }
+  ],
+  "kb_query": "rounding difference decimal NET_AMOUNT banker's rounding compare mismatch half-up",
+  "expected": {
+    "agent_sequence": ["copy_baseline", "load_data", "create_branch", "execute_program", "analyze_exceptions", "compare_outputs"],
+    "exception_category": "compare_diff",
+    "root_cause_keywords": ["rounding", "net_amount"],
+    "kb_article_id": "KB-640",
+    "report": {
+      "status": "FAILED",
+      "required_fields": ["baseline_name", "exception_category", "root_cause", "kb_reference", "steps"]
+    },
+    "max_response_time_ms": 15000
+  }
+}

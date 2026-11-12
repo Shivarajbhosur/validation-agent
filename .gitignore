@@ -1,0 +1,41 @@
+# Virtual Environment
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Environment Variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+data/logs/
+
+# Sessions
+data/sessions/
+
+# Knowledge DB
+data/knowledge_db/
+
+# Reports
+data/reports/
+
+# Regression test generated reports
+tests/regression/report/
+
+# Autopilot guidance memory (runtime-generated per baseline)
+data/autopilot_hints.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Chainlit
+.chainlit/*
+!.chainlit/config.toml

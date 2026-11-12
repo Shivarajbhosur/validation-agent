@@ -1,0 +1,267 @@
+# ============================================================================
+# CHAT ASSISTANT PROMPT CONFIGURATION
+# ============================================================================
+# Prompt text lives in this file and in the linked skill files. NO prompts in
+# Python code. Switching target language requires only:
+#   1. set TARGET_LANGUAGE in .env (e.g. "java")
+#   2. add prompts/COBOL_TO_JAVA_SKILL.MD with the same structure as the C# one
+# No code changes needed.
+# ============================================================================
+
+max_tokens: 16000
+temperature: 0.0
+
+# Generic, language-agnostic skill (uses {TARGET_LANGUAGE_NAME} placeholders).
+chat_skill_file: "prompts/chat_skill.md"
+
+# Domain skill file pattern. Resolved with TARGET_LANGUAGE from .env.
+# Default: TARGET_LANGUAGE=csharp -> prompts/COBOL_TO_CSHARP_SKILL.MD
+domain_skill_pattern: "prompts/COBOL_TO_{TARGET_LANGUAGE_UPPER}_SKILL.MD"
+
+# Per-artefact size caps so we never blow the context window.
+limits:
+  cobol_main_chars: 20000
+  cobol_subprogram_chars: 4000
+  target_main_chars: 30000
+  target_record_chars: 4000
+  similar_fix_chars: 1500
+  max_subprograms: 3
+  max_similar_fixes: 3
+  history_messages: 6
+
+# ── NL detection patterns ─────────────────────────────────────────────
+# Regexes used by agents.chat_agent._extract_targets to spot program /
+# baseline IDs in user messages and history. Mirrors the orchestrator's
+# patterns in prompts/skills/orchestration/_config.yaml so both layers stay
+# in sync. Compiled case-insensitive; captures are upper-cased by the agent
+# because on-disk IDs (files, KB keys) are upper-case.
+patterns:
+  # Full baseline e.g. P02070-HPPL494P / P03085-J3021493. Group(1) is the
+  # bare program portion.
+  baseline: '\bP\d{4,6}-([A-Z]{1,6}\d{2,8}[A-Z]?)\b'
+  # Bare program e.g. HPPL486P / J3021493 / OJ011533.
+  program: '\b([A-Z]{1,6}\d{2,8}[A-Z]?)\b'
+
+# Top-level user prompt assembled by the chat agent. Empty sections collapse
+# cleanly (the agent passes "" for sections that don't apply).
+user_template: |
+  # Conversation
+  {history_section}
+
+  # Latest User Message
+  {user_message}
+
+  {detected_section}
+
+  {cobol_section}
+
+  {target_section}
+
+  {similar_section}
+
+  {issues_section}
+
+  {subroutines_section}
+
+  {snippet_section}
+
+  # Instructions
+  - Follow the rules in the system prompts.
+  - Use ONLY the context above. Do not invent code, files, or line numbers.
+  - If the user asks for "complete", "full", "entire", "all", or simply
+    requests the code for a program / file that is present above, output
+    the FULL verbatim contents of every relevant file in fenced code
+    blocks. Do NOT summarise, do NOT ask which file, do NOT say "the code
+    is too large" — just emit it. Use one fenced block per file with a
+    heading naming the file path.
+  - If a `# Subroutines Called By This Program` section is present, you
+    MUST analyse the main program AND every listed subroutine in the
+    SAME reply. Produce one distinct issue analysis per program (main
+    program first, then each subroutine in the order given). Do NOT ask
+    which one to check first. Do NOT stop after the main program. Do
+    NOT skip subroutines because "sources not provided" — if a
+    subroutine appears under `# Subroutines Called By This Program`,
+    its COBOL and C# ARE provided in that section.
+  - If essential information is missing for the user's specific request, ask
+    ONE focused follow-up question.
+  - Otherwise answer directly and completely.
+
+# Section sub-templates. The chat agent picks them up by key.
+sections:
+  detected:
+    template: |
+      # Detected Context
+      Active program: `{program_name}`
+      Active baseline: `{baseline_name}`
+
+  cobol:
+    template: |
+      # COBOL Source (source of truth)
+      **File:** `{cobol_file_path}`
+      ```cobol
+      {cobol_code}
+      ```
+      {subprograms_block}
+
+  cobol_subprogram:
+    template: |
+      ## Sub-program (called via `CALL`): `{name}`
+      **File:** `{file_path}`
+      ```cobol
+      {code}
+      ```
+
+  target:
+    template: |
+      # {TARGET_LANGUAGE_NAME} Code (to validate / fix)
+      **File:** `{target_file_path}`
+      ```{TARGET_LANGUAGE_TAG}
+      {target_code}
+      ```
+      {record_block}
+
+  target_record:
+    template: |
+      ## Record / model file: `{record_path}`
+      ```{TARGET_LANGUAGE_TAG}
+      {record_code}
+      ```
+
+  similar:
+    template: |
+      # Similar Past Fixes (Knowledge Base)
+      {similar_fixes_block}
+
+  issues:
+    template: |
+      # Candidate Known Issues (Curated KB) — HIGH PRIORITY
+      Each entry below is a **confirmed bug pattern from this codebase**.
+      The `Fix that resolved it` is proven — it has already shipped in a
+      merged PR. When the target code above contains a matching pattern,
+      point it out and quote the fix verbatim, adapted to the identifiers
+      used in the current file. Do not invent alternative fixes when a
+      curated pattern matches.
+
+      {curated_issues_block}
+
+  subroutines:
+    template: |
+      # Subroutines Called By This Program
+
+      The main program above calls the subroutines below (detected from
+      `SSAB.OX.Batch.Subroutines` field declarations, plus any sibling
+      programs the user named explicitly). Each subroutine's COBOL and
+      target-language source is included, along with any curated KB
+      matches for that subroutine.
+
+      **You MUST analyse EVERY subroutine listed here alongside the main
+      program.** Produce one distinct issue report per subroutine (in the
+      order given below), even if a subroutine has no issues (say so
+      explicitly for that subroutine). Do NOT stop after the main
+      program. Do NOT ask which one to check first. Do NOT reply with
+      "sources not provided" — the sources ARE below.
+
+      {subroutines_block}
+
+  subroutine_bundle:
+    template: |
+      ---
+      ## Subroutine: `{subroutine_name}`
+
+      {sub_cobol_section}
+
+      {sub_target_section}
+
+      {sub_issues_section}
+
+  snippet:
+    template: |
+      # User-Provided Snippet / Diff
+      ```
+      {snippet}
+      ```
+
+# ============================================================================
+# WIKI-HELP FEATURE (optional — activates only if AZURE_DEVOPS_WIKI_ID is
+# resolvable). All prompts here are project-generic; substituted at runtime.
+# ============================================================================
+wiki:
+  # Tiny classifier prompt — decides if the user's turn needs a wiki page.
+  # Kept intentionally minimal so the pre-check LLM call is cheap (~50 tok
+  # output max). {toc} is the wiki table of contents, {message} is the user
+  # message, {assistant_name} is derived from AZURE_DEVOPS_PROJECT.
+  intent_system: |
+    You are a routing classifier for the {assistant_name}.
+
+    Below is the current wiki table of contents (leaf name + full path in
+    backticks). Decide whether the USER MESSAGE is asking for guidance on a
+    topic covered by ONE of these pages.
+
+    ## Wiki Table of Contents
+    {toc}
+
+    ## Decision rules
+    - If the user is asking "how", "help me", "walk me through", "guide me",
+      "steps for", "where do I find", or similar — AND the topic clearly
+      maps to one page above — respond with EXACTLY:
+          FETCH: <exact-page-path>
+      (the path from the backticks, not the leaf name)
+    - If the message is a program id, code snippet, workflow trigger
+      (e.g. "reporting <PROGRAM-ID>", "analyze <ID>", "compare <ID>"),
+      yes/no, greeting, or otherwise NOT about a wiki topic — respond
+      with EXACTLY:
+          NONE
+    - Never explain your choice. Never write anything else.
+
+  intent_user: |
+    USER MESSAGE:
+    {message}
+
+    Your one-line answer:
+
+  # Injected into the FINAL streaming chat prompt after a wiki page has been
+  # fetched. Turns the raw page into a directive: rewrite as clear guidance,
+  # never dump raw wiki text.
+  context_section: |
+    # Wiki Reference — `{page_path}` (from {assistant_name})
+    You are speaking to the user AS the **{assistant_name}**. The following
+    is internal reference material fetched from the project wiki. **Do NOT
+    paste this content verbatim.** Digest it and reply with:
+      1. **Introduce yourself briefly by name** in the very first line — for
+         example: "Hey! **{assistant_name}** here — <one warm sentence about
+         what you'll help with>."
+      2. A numbered list of concrete steps (or bullet points) in your own
+         words — clear, concise, action-oriented.
+      3. Any prerequisites or gotchas the user should know.
+      4. Close with one warm, natural follow-up like "Let me know which step
+         you're on or if you hit any snag — happy to walk you through it."
+    Never expose internal links or page metadata. Never say "according to the
+    wiki". Speak as an experienced teammate walking them through it, with the
+    **{assistant_name}** persona confidently on display.
+
+    ```markdown
+    {page_content}
+    ```
+
+# Static replies used when the LLM is not configured / fails. The agent should
+# also log the underlying error for diagnostics.
+fallbacks:
+  no_api: |
+    The chat assistant is not configured. Set `ENSO_AI_API_URL` and
+    `ENSO_AI_API_KEY` in `.env`, then restart the app.
+  llm_error: |
+    The chat assistant could not reach the LLM. Please retry in a moment. If
+    the problem persists, check the logs and verify `ENSO_AI_API_URL` /
+    `ENSO_AI_API_KEY`.
+
+# Display metadata for code fences and human-readable language names.
+languages:
+  csharp:
+    name: "C#"
+    tag: "csharp"
+  java:
+    name: "Java"
+    tag: "java"
+  python:
+    name: "Python"
+    tag: "python"

@@ -1,0 +1,45 @@
+{
+  "case_id": "REG-004-load-failure",
+  "description": "Data load step fails before execution; flow halts at load_data and the correct KB article is retrieved.",
+  "input": {
+    "baseline_name": "P02070-HPPL500P",
+    "program_name": "HPPL500P",
+    "error_message": "SQL load failed: bulk insert into staging table STG_CUSTOMER aborted (constraint violation)"
+  },
+  "step_outcomes": {
+    "load_data": "failed"
+  },
+  "llm_responses": {
+    "analyze": {
+      "exception_category": "run_failed",
+      "root_cause": "Data load aborted by a constraint violation on staging table STG_CUSTOMER during bulk insert.",
+      "confidence": 0.9
+    }
+  },
+  "kb_articles": [
+    {
+      "id": "KB-320",
+      "title": "Bulk insert constraint violation on staging tables during data load",
+      "content": "A constraint violation during the bulk insert into a staging table such as STG_CUSTOMER aborts the load step. Check the source extract for duplicate keys before loading.",
+      "metadata": { "program": "HPPL500P", "category": "run_failed" }
+    },
+    {
+      "id": "KB-640",
+      "title": "Rounding difference on decimal amount columns during compare",
+      "content": "Banker's rounding in C# differs from COBOL half-up rounding and produces a compare mismatch on decimal amount columns.",
+      "metadata": { "category": "compare_diff" }
+    }
+  ],
+  "kb_query": "bulk insert constraint violation staging table STG_CUSTOMER load aborted duplicate keys",
+  "expected": {
+    "agent_sequence": ["copy_baseline", "load_data"],
+    "exception_category": "run_failed",
+    "root_cause_keywords": ["constraint violation", "stg_customer"],
+    "kb_article_id": "KB-320",
+    "report": {
+      "status": "FAILED",
+      "required_fields": ["baseline_name", "exception_category", "root_cause", "kb_reference", "steps"]
+    },
+    "max_response_time_ms": 15000
+  }
+}

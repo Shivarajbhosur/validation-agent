@@ -1,0 +1,45 @@
+{
+  "case_id": "REG-001-run-failed",
+  "description": "Program execution fails with a null reference; analysis classifies RUN_FAILED and the correct KB article is retrieved.",
+  "input": {
+    "baseline_name": "P02070-HPPL494P",
+    "program_name": "HPPL494P",
+    "error_message": "System.NullReferenceException in Hppl494p.cs at line 212"
+  },
+  "step_outcomes": {
+    "execute_program": "failed"
+  },
+  "llm_responses": {
+    "analyze": {
+      "exception_category": "run_failed",
+      "root_cause": "Null reference in Hppl494p.cs when the customer master record is missing a guard clause before field access.",
+      "confidence": 0.93
+    }
+  },
+  "kb_articles": [
+    {
+      "id": "KB-501",
+      "title": "NullReference in generated C# when optional customer master record is absent",
+      "content": "When the COBOL optional customer master record is absent the generated C# dereferences a null object. Add a null guard clause before accessing fields in Hppl494p.cs.",
+      "metadata": { "program": "HPPL494P", "category": "run_failed" }
+    },
+    {
+      "id": "KB-777",
+      "title": "Rounding difference on decimal output columns during compare",
+      "content": "Banker's rounding in C# differs from COBOL half-up rounding and produces a compare mismatch on decimal amount columns.",
+      "metadata": { "category": "compare_diff" }
+    }
+  ],
+  "kb_query": "null reference Hppl494p.cs customer master record missing guard clause",
+  "expected": {
+    "agent_sequence": ["copy_baseline", "load_data", "create_branch", "execute_program"],
+    "exception_category": "run_failed",
+    "root_cause_keywords": ["null reference", "customer master"],
+    "kb_article_id": "KB-501",
+    "report": {
+      "status": "FAILED",
+      "required_fields": ["baseline_name", "exception_category", "root_cause", "kb_reference", "steps"]
+    },
+    "max_response_time_ms": 15000
+  }
+}

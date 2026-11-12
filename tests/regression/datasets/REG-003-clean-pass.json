@@ -1,0 +1,32 @@
+{
+  "case_id": "REG-003-clean-pass",
+  "description": "A clean baseline that runs all eight steps with no exceptions and produces a PASSED report.",
+  "input": {
+    "baseline_name": "P02070-HPPL486P",
+    "program_name": "HPPL486P"
+  },
+  "step_outcomes": {},
+  "llm_responses": {},
+  "kb_articles": [],
+  "kb_query": null,
+  "expected": {
+    "agent_sequence": [
+      "copy_baseline",
+      "load_data",
+      "create_branch",
+      "execute_program",
+      "analyze_exceptions",
+      "compare_outputs",
+      "generate_report",
+      "finalize_validation"
+    ],
+    "exception_category": "none",
+    "root_cause_keywords": [],
+    "kb_article_id": null,
+    "report": {
+      "status": "PASSED",
+      "required_fields": ["baseline_name", "exception_category", "status", "steps", "total_ms"]
+    },
+    "max_response_time_ms": 8000
+  }
+}

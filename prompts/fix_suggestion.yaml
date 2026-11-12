@@ -1,0 +1,771 @@
+# ============================================================================
+# FIX SUGGESTION PROMPTS
+# ============================================================================
+# Prompt templates for AI analysis and fix suggestion.
+# Used with: prompts/COBOL_TO_CSHARP_SKILL.md
+# ============================================================================
+
+skill_file: "prompts/COBOL_TO_CSHARP_SKILL.md"
+ims_skill_file: 
+  - "prompts/IMS_INFO_SKILL.md"
+  - "prompts/IMS_SELECT_SKILL.md"
+
+max_tokens: 4096
+ims_max_tokens: 8192
+temperature: 0.2
+
+# ============================================================================
+# PROMPT: Analyze Runtime Error
+# ============================================================================
+analyze_runtime_error:
+  description: "Analyze a runtime error and suggest a fix"
+  template: |
+    ## Task
+    Analyze the following runtime error and suggest a fix to make the C# code match the COBOL behavior.
+
+    ## Error Information
+    **Program Name:** {program_name}
+    **Baseline:** {baseline_name}
+    **Error Type:** Runtime Error (Program Failed to Execute)
+    **Exit Code:** {exit_code}
+
+    **Error Message:**
+    ```
+    {error_message}
+    ```
+
+    {stack_trace_section}
+
+    ## COBOL Source Code (Source of Truth)
+    **File:** {cobol_file_path}
+    ```cobol
+    {cobol_code}
+    ```
+
+    ## C# Code (To Fix)
+    **File:** {csharp_file_path}
+    ```csharp
+    {csharp_code}
+    ```
+
+    {csharp_record_section}
+
+    {subroutine_sources_section}
+
+    {project_types_section}
+
+    {experlib_section}
+
+    {baseline_files_section}
+
+    {issues_section}
+
+    {similar_fixes_section}
+
+    {previous_attempts_section}
+
+    ## Instructions
+    1. Analyze the error message and identify where it occurs in the C# code
+    2. Find the corresponding logic in the COBOL source
+    3. Compare COBOL vs C# and identify the mismatch
+    4. Suggest a specific fix with exact code changes
+    5. Assign a confidence level based on how certain you are
+
+    ## CRITICAL RULES - MUST FOLLOW
+    - **DO NOT add extra null checks, if conditions, or defensive coding**
+    - **C# code must MIRROR the COBOL logic exactly - nothing more, nothing less**
+    - **COBOL is the source of truth - if COBOL doesn't check for null, C# shouldn't either**
+    - **Look for TEST BUG comments, obvious mistakes, or code that doesn't match COBOL**
+    - **If C# has extra/wrong code, suggest REMOVING it and using the COBOL equivalent**
+    - **The fix should make C# behave EXACTLY like COBOL, not "safer"**
+    - **Original code should show the ACTUAL buggy code from the C# file**
+    - **Suggested fix should show what COBOL does - simple, direct translation**
+    - **DO NOT INVENT CODE - only suggest code that exists in COBOL**
+    - **DO NOT add default values, initializations, or fields that COBOL doesn't set**
+    - **If COBOL only sets 3 fields, C# should only set 3 fields - NOT MORE**
+    - **Check COBOL line by line - C# must have exact same number of operations**
+
+    ## ROOT-CAUSE TRACING (universal reasoning rule)
+    A runtime error surfaces at ONE line, but the bug is often planted UPSTREAM
+    where the value was first assigned. **DO NOT stop at the line that threw** —
+    trace WHERE each variable involved in the error was assigned.
+
+    Practical procedure:
+      1. Read the exception + stack trace and identify the exact fields it complains about.
+      2. Grep the entire C# file for every ASSIGNMENT to those fields (both direct writes
+         like ``foo.Bar = ...`` and property writes like ``foo.Bar.Value = ...``).
+      3. For each such assignment, verify the RIGHT-HAND SIDE type matches the LEFT-HAND
+         SIDE type. Use the ExperLib runtime source (provided below when relevant) to
+         confirm what each method actually returns.
+      4. The bug is at the FIRST assignment where the types disagree. Fix it there —
+         not at the downstream site where the error surfaced.
+
+    Only if step 4 finds nothing wrong should you consider the error-surfacing line
+    itself as the bug location.
+
+    ## VERIFY LHS EXISTS FIRST (universal, applies before any other rule)
+    Before applying the WRAPPER-`.Value` rule below (or any other transformation),
+    verify that the LEFT-HAND SIDE variable / field name in the buggy code
+    actually exists as a declared field or variable — either in the current
+    C# file above, the "Referenced Project Types" section, or the "ExperLib
+    Runtime Source" section.
+
+    If the LHS name CANNOT be located in ANY of those sources, then the
+    WRONG LHS NAME IS the bug. Do NOT keep it in your suggested fix. Look
+    for a similar name that DOES exist in the sources. Common patterns:
+      * The buggy code is missing a container prefix — e.g. `xField` should
+        be `container.XField`, or `xTt` should be `container.XTt`, where
+        `container` is a declared variable of a composite type visible in
+        the referenced sources.
+      * The buggy code drops a capitalization or word-boundary — e.g.
+        `wTimestampDate` (no such field) should be `wTimestamp.TimestampDate`
+        (nested access via `wTimestamp`'s composite type).
+
+    Only when the LHS name DOES exist as a declared field/variable in the
+    sources should you proceed to apply the wrapper-`.Value` rule below.
+    If the LHS doesn't exist, the wrapper rule is not applicable — the bug
+    is the wrong name, not a type mismatch.
+
+    ## WRAPPER-FIELD `.Value` ASSIGNMENT RULE (universal, no hardcoded names)
+    Many project types use **wrapper field classes** (e.g. `StringField`, `DateType`,
+    `IntField`, `DecimalField`) which expose an inner `.Value` property that holds the
+    RAW scalar (`string`, `DateTime?`, `int?`, `decimal?`, etc.). The wrapper source
+    is provided above under `## ExperLib Runtime Source` — READ IT to confirm what
+    `.Value`'s declared type actually is.
+
+    **The critical asymmetry:**
+      * ``target.Field = someWrapper``           — assigning wrapper → wrapper (VALID; wrappers usually
+                                                    support implicit conversion / assignment operators)
+      * ``target.Field.Value = rawScalar``       — assigning scalar → scalar (VALID)
+      * ``target.Field.Value = someWrapper``     — assigning WRAPPER → RAW SCALAR  (**TYPE MISMATCH BUG**)
+
+    Whenever you see ``X.Value = Y`` in the code:
+      1. From the wrapper's source (above), determine what type `.Value` is declared as.
+      2. From the referenced-project-type source (above), determine what type Y returns/is.
+      3. If Y is a WRAPPER object and `.Value` is a RAW scalar, the bug is the
+         extra ``.Value`` on the LEFT-HAND SIDE. The fix is to **remove `.Value` from
+         the LHS** so the whole wrapper is assigned to the field:
+         ``target.Field = Y;``  ← correct
+         Do NOT rewrite the RHS (do not add ``.ToString()``, ``.Substring()``, format
+         conversions, or change ``GetXxxType`` to ``GetString``) — the RHS was correct;
+         only the extraneous ``.Value`` on the LHS is wrong.
+
+    This rule is structural and applies to ANY wrapper class — do not restrict it to
+    any particular type name.
+
+    ## Example of WRONG vs CORRECT Fix
+    **WRONG (Don't suggest this):**
+    ```csharp
+    if (testNull != null) 
+        pplpltpt.Lopnr = testNull.Trim();
+    else
+        pplpltpt.Lopnr = string.Empty;
+    ```
+
+    **CORRECT (Match COBOL exactly):**
+    ```csharp
+    // COBOL: MOVE PPL035-LOPNR TO PPLPLTPT-LOPNR
+    pplpltpt.Lopnr = ppl035Area.Lopnr;
+    ```
+    ## Example 2: DO NOT ADD EXTRA CODE
+    **COBOL sets 3 fields:**
+    ```cobol
+    MOVE PPL035-UTF-DATE TO W-TIMESTAMP-DATE
+    MOVE WS-TT TO W-TIMESTAMP-TT
+    MOVE WS-MM TO W-TIMESTAMP-MM
+    MOVE W-TIMESTAMP TO PPLPLTPT-SUTFTIDP
+    ```
+
+    **WRONG (Adding extra fields not in COBOL):**
+    ```csharp
+    wTimestamp.TimestampDate = ppl035Area.UtfDate;
+    wTimestamp.TimestampTt = avvdttmm.Tt;
+    wTimestamp.TimestampMm = avvdttmm.Mm;
+    wTimestamp.TimestampSek = "00";      // ❌ NOT IN COBOL!
+    wTimestamp.TimestampMsek = "000000"; // ❌ NOT IN COBOL!
+    ```
+
+    **CORRECT (Exact COBOL translation):**
+    ```csharp
+    // COBOL sets exactly 3 fields, so C# sets exactly 3 fields
+    wTimestamp.TimestampDate = ppl035Area.UtfDate;
+    wTimestamp.TimestampTt = avvdttmm.Tt;
+    wTimestamp.TimestampMm = avvdttmm.Mm;
+    pplpltpt.Sutftidp = new DateType(wTimestamp, "yyyy-MM-dd-HH.mm.ss.ffffff");
+    ```
+
+    ## Required Output Format
+    Provide your response in this exact format:
+
+    ### Root Cause
+    [One sentence explaining why the error occurs]
+
+    ### Analysis
+    [Detailed comparison of COBOL logic vs C# implementation]
+
+    ### File to Fix
+    [Exact path of the C# file shown under "## C# Code (To Fix)" above — copy
+    its **File:** path verbatim; do NOT invent a different folder or name a
+    DIFFERENT program's file unless a named subroutine is clearly implicated.]
+
+    ### Line Number
+    [Line number if identifiable, or "N/A"]
+
+    ### Original Code
+    ```csharp
+    [Current code that is wrong]
+    ```
+
+    ### Suggested Fix
+    ```csharp
+    [Corrected code]
+    ```
+
+    ### Confidence
+    [0-100]%
+
+    ### Fix Type
+    [Category: null_check, decimal_precision, string_padding, date_format, array_index, rounding, logic_mismatch, other]
+
+    ### Justification
+    [Reference to COBOL source that proves the fix is correct]
+
+    ### Verification
+    [How to test that this fix works]
+
+    ### Notes
+    [Any side effects, edge cases, or additional considerations]
+
+# ============================================================================
+# PROMPT: Analyze Output Difference
+# ============================================================================
+analyze_output_diff:
+  description: "Analyze output differences and suggest a fix"
+  template: |
+    ## Task
+    Analyze the following output differences and suggest a fix to make the C# output match the COBOL output exactly.
+
+    ## Error Information
+    **Program Name:** {program_name}
+    **Baseline:** {baseline_name}
+    **Error Type:** Output Comparison Failed (Diff Found)
+
+    **Difference Summary:**
+    ```
+    {diff_details}
+    ```
+
+    **Failed Files:**
+    {failed_files}
+
+    ## COBOL Source Code (Source of Truth)
+    **File:** {cobol_file_path}
+    ```cobol
+    {cobol_code}
+    ```
+
+    ## C# Code (To Fix)
+    **File:** {csharp_file_path}
+    ```csharp
+    {csharp_code}
+    ```
+
+    {csharp_record_section}
+
+    {subroutine_sources_section}
+
+    {project_types_section}
+
+    {experlib_section}
+
+    {baseline_files_section}
+
+    {issues_section}
+
+    {similar_fixes_section}
+
+    {previous_attempts_section}
+
+    ## Instructions
+    1. Analyze the output differences - what is different between expected and actual?
+    2. Identify which part of the C# code produces this output
+    3. Find the corresponding logic in the COBOL source
+    4. Compare COBOL vs C# and identify why output differs
+    5. Suggest a specific fix with exact code changes
+    6. Assign a confidence level based on how certain you are
+
+    ## USE THE FIELD-LEVEL DIFF FIRST (when present)
+    The Difference Summary above may contain a `FIELD-LEVEL DIFFERENCES`
+    block listing, for each mismatching record of a DELIMITED file (e.g.
+    CSV), the EXACT 1-based column number that differs, with the expected
+    vs generated value. When that block is present you MUST:
+      1. Read the differing column and its expected vs generated value —
+         that is the precise symptom.
+      2. Map the 1-based column number to its field using the COBOL
+         record layout (the output record's field order) AND the C#
+         record/model class shown in context. Column N = the Nth field
+         written to that output record.
+      3. Trace the C# code that ASSIGNS or FORMATS that specific field,
+         compare it to the COBOL that produces the same field, and fix
+         ONLY the code path for that field. Do NOT change fields that
+         the diff shows as already matching.
+      4. If multiple columns differ, address the one(s) named — each is
+         a real field-level mismatch; ignore columns not listed.
+
+    For FIXED-WIDTH files (txt/seq) the whole-record expected vs generated
+    values are shown instead. Match the expected value by using the
+    CORRECT numeric/date formatting the COBOL PICTURE implies — derive the
+    width and padding from that field's COBOL PIC clause (e.g. a `PIC 9(n)`
+    count becomes a zero-padded n-digit conversion such as `ToString("D<n>")`
+    where `<n>` is taken from the PICTURE, NOT a guessed constant), NOT by
+    hand-rolling `PadLeft`/`PadRight` to hit character columns — positional
+    padding hacks are almost always wrong and will not match the normalized
+    baseline.
+
+    ## EMPTY / MISSING OUTPUT FILE → FILE-READ BUFFER MUST BE `Record`, NOT `String`
+    ## FILE-READ BUFFER MUST BE `Record`, NOT `String` (check on ANY missing/empty records)
+    Whenever the output is WRONG in a way that points at bad input reading —
+    the generated file is EMPTY (zero records), OR records are MISSING, OR
+    many rows look garbled/mismatched even though the program ran to
+    completion — the most common migration defect is a file-read INPUT BUFFER
+    that was declared as a C# `String` instead of a `Record`. Check this FIRST
+    for this diff.
+
+    Why it breaks: a `someFile.Read(buffer)` call populates a `Record` object
+    BY REFERENCE. If `buffer` is declared as a `String`
+    (`private String wsFixinRec = "";`), `Read()` cannot fill it — the
+    variable stays empty, so every downstream `Subfield(...)` /
+    `CharAt(...)` / `ReplaceStr(...)` operates on empty data and the program
+    writes an EMPTY or INCOMPLETE output file (missing/wrong records).
+
+    Detection heuristic (do this regardless of how many records differ): for
+    EVERY field passed as an argument to a `*.Read(...)` call (e.g.
+    `fixinFile.Read(wsFixinRec)`), locate that field's DECLARATION. If it is
+    declared as `String` (and typically reset with `wsFixinRec = "";`), THAT
+    is the bug. The fix has TWO parts and BOTH are required — the declaration
+    change alone will NOT compile:
+      1. Declaration: `private String wsFixinRec = "";`
+         → `private Record wsFixinRec = new Record();`
+      2. Reset / clear: `wsFixinRec = "";`  →  `wsFixinRec.Value = "";`
+    Leave `Subfield(wsFixinRec, ...)`, `CharAt(wsFixinRec, ...)`,
+    `Display(wsFixinRec)` and the `*.Read(wsFixinRec)` call sites UNCHANGED —
+    those already accept a `Record`. This applies to EVERY `ws*Rec` file-read
+    input buffer. Because this fix changes two non-adjacent lines, follow the
+    MULTIPLE-EDIT rule below and emit one Original/Suggested pair per line.
+
+    ## DISPLAY NUMERIC COUNTER MUST BE ZERO-PADDED WITH `Format(...)`
+    Symptom: a SYSOUT / report line prints a numeric counter UNPADDED (e.g.
+    `... = 10`) but the baseline shows the SAME number ZERO-PADDED to a fixed
+    width (e.g. `... = 00010`). Example diff (expected vs generated):
+      expected : `ANTAL LÄSTA POSTER      FRÅN INFIL = 00010`
+      generated: `ANTAL LÄSTA POSTER      FRÅN INFIL = 10`
+
+    Cause: COBOL `DISPLAY` of a numeric field renders it using that field's
+    PICTURE (e.g. `PIC 9(5)`), which zero-pads to a fixed width. The migrated
+    C# emits `Display("... = " + antIn)`, which prints the raw integer with
+    no padding.
+
+    Fix: wrap ONLY the numeric variable inside the `Display(...)`
+    concatenation with `Format(<var>, "<N zeros>")`, where `N` is the width
+    of the EXPECTED (baseline) value — count its digit characters (e.g.
+    `00010` → 5 → `"00000"`), or equivalently the `N` in the COBOL `PIC 9(N)`.
+    Example:
+      BEFORE: `Display("ANTAL LÄSTA POSTER      FRÅN INFIL = " + antIn);`
+      AFTER : `Display("ANTAL LÄSTA POSTER      FRÅN INFIL = " + Format(antIn, "00000"));`
+
+    Strict scope — do ONLY this:
+      * Change ONLY the `Display(...)` statement line(s) whose number is
+        mis-padded. One Original/Suggested pair per affected line (see the
+        MULTIPLE-EDIT rule below — there are usually several adjacent
+        counters like `antIn`, `antFilt`, `antUt`).
+      * Keep the literal text, spacing, and the rest of the line EXACTLY as
+        is; only the `<var>` token becomes `Format(<var>, "<zeros>")`.
+      * Do NOT change the variable's declaration (`private int antIn = 0;`),
+        its increments (`antIn++;`), or any other use of it.
+      * Leave `Display(...)` lines that print only string literals, or that
+        are already padded, UNCHANGED.
+
+    ## MULTIPLE-EDIT FIXES (one fix that needs several separate changes)
+    If the correct fix requires more than one SEPARATE, non-adjacent edit in
+    the same file (the `String`→`Record` fix above is the canonical case:
+    declaration + reset; the `Format(...)` fix above is another: one edit per
+    `Display` line), output one `### Original Code` / `### Suggested Fix`
+    pair FOR EACH edit, in order, repeating those two headers. Each
+    `### Original Code` block must contain EXACTLY the current line(s) to
+    replace, and its matching `### Suggested Fix` block the replacement. Do
+    NOT merge non-adjacent lines into a single block.
+
+    ## CRITICAL RULES - MUST FOLLOW
+    - **DO NOT add extra null checks, if conditions, or defensive coding**
+    - **C# code must MIRROR the COBOL logic exactly - nothing more, nothing less**
+    - **COBOL is the source of truth - if COBOL doesn't check for null, C# shouldn't either**
+    - **Look for TEST BUG comments, obvious mistakes, or code that doesn't match COBOL**
+    - **If C# has extra/wrong code, suggest REMOVING it and using the COBOL equivalent**
+    - **Original code should show the ACTUAL buggy code from the C# file**
+    - **Suggested fix should show what COBOL does - simple, direct translation**
+    - **DO NOT INVENT CODE - only suggest code that exists in COBOL**
+    - **DO NOT add default values, initializations, or fields that COBOL doesn't set**
+    - **If COBOL only sets 3 fields, C# should only set 3 fields - NOT MORE**
+    - **Check COBOL line by line - C# must have exact same number of operations**
+
+    ## USE THE REAL API - DO NOT REBUILD VALUES BY HAND (universal)
+    When the `## ExperLib Runtime Source` or `## Referenced Project Types`
+    sections are provided below, they contain the ACTUAL constructor and
+    method signatures of every type the C# code uses. You MUST use them:
+      - If a type (e.g. `DateType`) exposes a constructor that accepts a
+        whole object/record plus a format string
+        (e.g. `DateType(object value, string format)`), and the COBOL does a
+        single group `MOVE` of that record to the output, the fix is to call
+        that constructor with the whole object — NOT to manually rebuild the
+        string field-by-field.
+      - **NEVER** reconstruct an output value with manual `PadLeft`,
+        `PadRight`, `Substring`, `.ToString("Dn")`, or string concatenation
+        when a constructor / helper on the real type already produces it.
+        Hand-rolled formatting is almost always WRONG and is a hallucination.
+      - If the current buggy C# already calls the right constructor but with
+        wrong ARGUMENTS (e.g. a hardcoded literal instead of the populated
+        record, or the wrong format string), the fix is to correct the
+        ARGUMENTS only — keep the same constructor call shape.
+
+    ## GROUP MOVE RULE (COBOL → C#)
+    A COBOL `MOVE W-GROUP TO OUT-FIELD` moves the ENTIRE populated group in
+    one operation. The C# equivalent is a SINGLE assignment that passes the
+    whole populated object to the wrapper's constructor, using the date
+    picture the COBOL defines for that field as the format string.
+
+    The snippet below is a GENERIC PATTERN using placeholder names in angle
+    brackets. You MUST substitute the REAL variable / field names and the
+    REAL format string derived from THIS program's COBOL source and current
+    C# file. Do NOT copy the placeholder names or any literal format below —
+    they are shapes, not answers:
+    ```csharp
+    // COBOL:  MOVE <W-GROUP> TO <OUT-FIELD>   (single group move)
+    <outArea>.<TargetField> = new <WrapperType>(<wGroup>, "<format from COBOL picture>");
+    ```
+    The fields of `<wGroup>` are already assigned on the lines above, so you
+    pass `<wGroup>` itself — you do NOT re-read, re-pad, or re-concatenate
+    its individual fields.
+
+    ## Example of WRONG vs CORRECT SHAPE (placeholder names — do NOT copy them)
+    **WRONG (manually rebuilding a string the real wrapper type already formats):**
+    ```csharp
+    string s =
+        <group>.<FieldA>.Value.ToString().PadRight(10) + "-" +
+        <group>.<FieldB>.Value.ToString().PadLeft(2, '0') + ... ;
+    <outArea>.<TargetField> = s;     // hand-rolled formatting = almost always wrong
+    ```
+    **CORRECT (pass the whole populated group to the wrapper constructor):**
+    ```csharp
+    // the group's fields were assigned on the lines above; COBOL then does a
+    // single  MOVE <W-GROUP> TO <OUT-FIELD>, so C# passes the whole object:
+    <outArea>.<TargetField> = new <WrapperType>(<wGroup>, "<format from COBOL picture>");
+    ```
+
+    ## Required Output Format
+    Provide your response in this exact format:
+
+    ### Root Cause
+    [One sentence explaining why the output differs]
+
+    ### Analysis
+    [Detailed comparison of COBOL logic vs C# implementation, focusing on output generation]
+
+    ### File to Fix
+    [The EXACT path of the C# file shown under "## C# Code (To Fix)" above
+    (its **File:** line) — this is THIS program's own source. Copy that path
+    verbatim; do NOT invent a different folder (e.g. a `Batch.Subroutines`
+    path) and do NOT point at a DIFFERENT program's file. Only name another
+    file if the diff clearly implicates a specific subroutine whose source is
+    shown in the "## Subroutine Source Files" section.]
+
+    ### Line Number
+    [Line number if identifiable, or "N/A"]
+
+    ### Original Code
+    ```csharp
+    [Current code that produces wrong output]
+    ```
+
+    ### Suggested Fix
+    ```csharp
+    [Corrected code that will produce matching output]
+    ```
+
+    ### Confidence
+    [0-100]%
+
+    ### Fix Type
+    [Category: null_check, decimal_precision, string_padding, date_format, array_index, rounding, logic_mismatch, output_format, other]
+
+    ### Justification
+    [Reference to COBOL source that proves the fix is correct]
+
+    ### Verification
+    [How to verify the output now matches]
+
+    ### Notes
+    [Any side effects, edge cases, or additional considerations]
+
+# ============================================================================
+# PROMPT: Retry After Failed Fix
+# ============================================================================
+retry_analysis:
+  description: "Re-analyze after a failed fix attempt"
+  template: |
+    ## Task
+    The previous fix attempt did not resolve the issue. Analyze the new error and suggest a different fix.
+
+    ## Current Attempt
+    **Attempt Number:** {attempt_number} of {max_attempts}
+    **Program Name:** {program_name}
+    **Baseline:** {baseline_name}
+
+    ## Previous Failed Attempts
+    {previous_attempts_details}
+
+    ## Current Error
+    **Error Message:**
+    ```
+    {error_message}
+    ```
+
+    {stack_trace_section}
+
+    ## COBOL Source Code (Source of Truth)
+    **File:** {cobol_file_path}
+    ```cobol
+    {cobol_code}
+    ```
+
+    ## C# Code (Current State After Previous Fixes)
+    **File:** {csharp_file_path}
+    ```csharp
+    {csharp_code}
+    ```
+
+    {subroutine_sources_section}
+
+    {project_types_section}
+
+    {experlib_section}
+
+    {baseline_files_section}
+
+    {issues_section}
+
+    {similar_fixes_section}
+
+    ## Instructions
+    1. Review what was tried before and why it failed
+    2. Analyze the NEW error message - is it the same issue or a different one?
+    3. If same issue: try a DIFFERENT approach
+    4. If new issue: the previous fix may have worked partially, now fix the new issue
+    5. Consider if multiple changes are needed together
+    6. Be more thorough - check edge cases, null conditions, data types
+
+    ## EMPTY / MISSING OUTPUT FILE → FILE-READ BUFFER MUST BE `Record`, NOT `String`
+    If the output file is EMPTY or nearly every expected record is missing
+    even though the program ran, check EVERY field passed to a `*.Read(...)`
+    call. `Read()` fills a `Record` BY REFERENCE; a field declared as
+    `String` (`private String wsFixinRec = "";`) stays empty, so all
+    downstream `Subfield(...)` / `CharAt(...)` work on empty data and the
+    output file is empty. Fix has TWO required parts (declaration alone will
+    not compile):
+      1. `private String wsFixinRec = "";` → `private Record wsFixinRec = new Record();`
+      2. `wsFixinRec = "";` → `wsFixinRec.Value = "";`
+    Leave `Subfield/CharAt/Display/Read(wsFixinRec)` call sites unchanged.
+
+    ## DISPLAY NUMERIC COUNTER MUST BE ZERO-PADDED WITH `Format(...)`
+    If a SYSOUT/report line prints a numeric counter UNPADDED (e.g. `= 10`)
+    but the baseline shows it ZERO-PADDED (e.g. `= 00010`), wrap ONLY that
+    numeric variable in the `Display(...)` concatenation with
+    `Format(<var>, "<N zeros>")`, where N = the digit width of the expected
+    baseline value (`00010` → 5 → `"00000"`). Example:
+      `Display("... = " + antIn);` → `Display("... = " + Format(antIn, "00000"));`
+    Change ONLY the affected `Display(...)` line(s) — one Original/Suggested
+    pair each; do NOT touch the variable's declaration or increments.
+
+    ## MULTIPLE-EDIT FIXES (one fix that needs several separate changes)
+    If the correct fix requires more than one SEPARATE, non-adjacent edit in
+    the same file (e.g. the `String`→`Record` declaration + reset above),
+    output one `### Original Code` / `### Suggested Fix` pair FOR EACH edit,
+    in order, repeating those two headers. Do NOT merge non-adjacent lines
+    into a single block.
+
+    ## CRITICAL RULES - MUST FOLLOW
+    - **DO NOT add extra null checks, if conditions, or defensive coding**
+    - **C# code must MIRROR the COBOL logic exactly - nothing more, nothing less**
+    - **COBOL is the source of truth - if COBOL doesn't check for null, C# shouldn't either**
+    - **Look for TEST BUG comments, obvious mistakes, or code that doesn't match COBOL**
+    - **If C# has extra/wrong code, suggest REMOVING it and using the COBOL equivalent**
+    - **The fix should make C# behave EXACTLY like COBOL, not "safer"**
+    - **Original code should show the ACTUAL buggy code from the C# file**
+    - **Suggested fix should show what COBOL does - simple, direct translation**
+    - **DO NOT INVENT CODE - only suggest code that exists in COBOL**
+    - **DO NOT add default values, initializations, or fields that COBOL doesn't set**
+    - **If COBOL only sets 3 fields, C# should only set 3 fields - NOT MORE**
+    - **Check COBOL line by line - C# must have exact same number of operations**
+
+    ## Required Output Format
+    Provide your response in this exact format:
+
+    ### What Changed
+    [Explain if this is the same error or a new error after the previous fix]
+
+    ### Root Cause
+    [One sentence explaining the current error]
+
+    ### Analysis
+    [Detailed analysis, noting what was tried before and why this approach is different]
+
+    ### File to Fix
+    [Exact path of the C# file shown under "## C# Code (Current State After
+    Previous Fixes)" above — copy its **File:** path verbatim; do NOT invent
+    a different folder or name a DIFFERENT program's file unless a named
+    subroutine is clearly implicated.]
+
+    ### Line Number
+    [Line number if identifiable, or "N/A"]
+
+    ### Original Code
+    ```csharp
+    [Current code that is wrong]
+    ```
+
+    ### Suggested Fix
+    ```csharp
+    [Corrected code - try a DIFFERENT approach than before]
+    ```
+
+    ### Confidence
+    [0-100]%
+
+    ### Fix Type
+    [Category]
+
+    ### Why This Is Different
+    [Explain why this fix will work when the previous one didn't]
+
+    ### Justification
+    [Reference to COBOL source]
+
+    ### Verification
+    [How to test]
+
+    ### Notes
+    [Additional considerations]
+
+# ============================================================================
+# SECTION TEMPLATES
+# ============================================================================
+sections:
+  stack_trace:
+    condition: "stack_trace is not None"
+    template: |
+      **Stack Trace:**
+      ```
+      {stack_trace}
+      ```
+
+  csharp_record:
+    condition: "csharp_record_code is not None"
+    template: |
+      ## C# Record/Model File
+      **File:** {csharp_record_path}
+      ```csharp
+      {csharp_record_code}
+      ```
+
+  similar_fixes:
+    condition: "similar_fixes is not empty"
+    template: |
+      ## Similar Past Fixes (From Knowledge Base)
+      The following similar issues were fixed before. Use these as reference:
+
+      {similar_fixes_list}
+
+  previous_attempts:
+    condition: "attempt_number > 1"
+    template: |
+      ## Previous Fix Attempts (Did Not Work)
+      The following fixes were already tried but did not resolve the issue:
+
+      {previous_attempts_list}
+
+# ============================================================================
+# OUTPUT PARSING
+# ============================================================================
+output_parsing:
+  fields:
+    - name: "root_cause"
+      pattern: "### Root Cause\\n(.+?)\\n\\n"
+      required: true
+
+    - name: "explanation"
+      pattern: "### Analysis\\n(.+?)\\n\\n### File"
+      required: true
+
+    - name: "file_to_fix"
+      pattern: "### File to Fix\\n(.+?)\\n"
+      required: true
+
+    - name: "line_number"
+      pattern: "### Line Number\\n(.+?)\\n"
+      required: false
+      type: "int"
+
+    - name: "original_code"
+      pattern: "### Original Code\\n```csharp\\n(.+?)\\n```"
+      required: true
+
+    - name: "suggested_code"
+      pattern: "### Suggested Fix\\n```csharp\\n(.+?)\\n```"
+      required: true
+
+    - name: "confidence"
+      pattern: "### Confidence\\n(\\d+)%"
+      required: true
+      type: "int"
+
+    - name: "fix_type"
+      pattern: "### Fix Type\\n(.+?)\\n"
+      required: false
+
+    - name: "additional_notes"
+      pattern: "### Notes\\n(.+?)$"
+      required: false
+
+# ============================================================================
+# FALLBACK PROMPTS
+# ============================================================================
+fallback:
+  no_cobol:
+    template: |
+      ## Warning
+      COBOL source code is not available for program {program_name}.
+
+      Without COBOL source, I cannot verify if the C# code matches the original behavior.
+
+      **Recommendation:** Locate the COBOL source file ({program_name}.COB) and retry analysis.
+
+      **Confidence:** Below 50% for any fix suggestion without COBOL reference.
+
+  no_csharp:
+    template: |
+      ## Warning
+      C# code is not available for program {program_name}.
+
+      Cannot suggest a fix without seeing the current C# implementation.
+
+      **Recommendation:** Ensure the C# file exists at the expected location.
+
+  no_error:
+    template: |
+      ## Warning
+      No error message or diff details provided.
+
+      Please provide:
+      - The error message (for runtime errors)
+      - The diff output (for comparison failures)
+
+      Without this information, I cannot analyze the issue.
